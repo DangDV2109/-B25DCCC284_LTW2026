@@ -8,6 +8,7 @@ const QuestionCard = ({
   status,
   selectedOption,
   onSelectAnswer,
+  hintActive,
 }) => {
   const levelName = LEVELS[question.level];
   const multiplierText = formatMultiplier(MULTIPLIERS[question.level]);
@@ -27,6 +28,8 @@ const QuestionCard = ({
       </h3>
 
       <p className="question-text">{question.question}</p>
+
+      {hintActive && <p className="hint-text">{`Gợi ý: ${question.hint}`}</p>}
 
       <div className="answers-grid">
         {question.options.map((opt, idx) => (
