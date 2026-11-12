@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
+import { formatScore } from '../data';
 
-const Home = ({ playerName, setPlayerName }) => {
+const Home = ({ playerName, setPlayerName, history }) => {
   const navigate = useNavigate();
 
   const isBlank = !playerName || playerName.trim() === '';
@@ -11,6 +12,11 @@ const Home = ({ playerName, setPlayerName }) => {
       navigate('/play');
     }
   };
+
+  const bestRecord =
+    history && history.length > 0
+      ? [...history].sort((a, b) => b.finalScore - a.finalScore)[0]
+      : null;
 
   return (
     <div className="page-container">
@@ -30,8 +36,15 @@ const Home = ({ playerName, setPlayerName }) => {
             sai hoặc hết giờ: trừ đúng mức cược.
           </li>
           <li>Còn dưới 100 điểm là cháy túi, lượt chơi kết thúc ngay.</li>
+          <li>Bạn có 3 quyền trợ giúp (Xem trước, Bảo hiểm, Gợi ý), mỗi quyền dùng 1 lần trong lượt chơi.</li>
         </ul>
       </div>
+
+      {bestRecord && (
+        <p className="record-banner">
+          {`Kỷ lục: ${formatScore(bestRecord.finalScore)} – ${bestRecord.name}`}
+        </p>
+      )}
 
       <form className="home-form" onSubmit={handleStart}>
         <label htmlFor="player-name-input">Tên người chơi: </label>
