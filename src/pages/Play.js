@@ -3,16 +3,19 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import {
   START_SCORE,
   MIN_BET,
+  MAX_BET,
+  BET_STEP,
   TIME_PER_QUESTION,
   formatScore,
 } from '../data';
-import { validateBet, calcChange } from '../utils';
+import { validateBet, calcChange, getResult } from '../utils';
 import BetPanel from '../components/BetPanel';
 import QuestionCard from '../components/QuestionCard';
 import Timer from '../components/Timer';
 import ScoreInfo from '../components/ScoreInfo';
+import Supports from '../components/Supports';
 
-const Play = ({ questions, loading, error, playerName }) => {
+const Play = ({ questions, loading, error, playerName, addHistoryRecord }) => {
   const navigate = useNavigate();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -23,6 +26,15 @@ const Play = ({ questions, loading, error, playerName }) => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [lastRoundResult, setLastRoundResult] = useState(null);
   const [rounds, setRounds] = useState([]);
+
+  const [usedSupports, setUsedSupports] = useState({
+    preview: false,
+    insurance: false,
+    hint: false,
+  });
+  const [previewActive, setPreviewActive] = useState(false);
+  const [insuredCurrent, setInsuredCurrent] = useState(false);
+  const [hintActive, setHintActive] = useState(false);
 
   const isBlankName = !playerName || playerName.trim() === '';
   const currentQuestion = questions[currentIndex];
@@ -42,7 +54,9 @@ const Play = ({ questions, loading, error, playerName }) => {
       if (!currentQuestion || status !== 'answering') return;
 
       const isCorrect = chosenIndex === currentQuestion.answer;
-      const actualChange = calcChange(bet, currentQuestion.level, isCorrect);
+      const rawChange = calcChange(bet, currentQuestion.level, isCorrect);
+      const insuredSaved = !isCorrect && insuredCurrent;
+      const actualChange = insuredSaved ? 0 : rawChange;
       const nextScore = score + actualChange;
 
       const roundRecord = {
@@ -59,10 +73,11 @@ const Play = ({ questions, loading, error, playerName }) => {
       setLastRoundResult({
         correct: isCorrect,
         change: actualChange,
+        insuredSaved,
       });
       setStatus('revealed');
     },
-    [currentQuestion, status, bet, score]
+    [currentQuestion, status, bet, insuredCurrent, score]
   );
 
   // Đồng hồ 25 giây ở bước trả lời
@@ -94,6 +109,16 @@ const Play = ({ questions, loading, error, playerName }) => {
       if (isBankrupt || isFinishedAll) {
         const correctCount = rounds.filter((r) => r.correct).length;
         const reason = isBankrupt ? 'bankrupt' : 'completed';
+        const historyEntry = {
+          id: Date.now(),
+          name: playerName.trim(),
+          finalScore: score,
+          correctCount,
+          played: rounds.length,
+          result: getResult(score),
+          playedAt: new Date().toLocaleString('vi-VN'),
+        };
+        addHistoryRecord(historyEntry);
         navigate('/result', {
           replace: true,
           state: {
@@ -107,6 +132,9 @@ const Play = ({ questions, loading, error, playerName }) => {
       } else {
         setCurrentIndex((prev) => prev + 1);
         setBet(MIN_BET);
+        setPreviewActive(false);
+        setInsuredCurrent(false);
+        setHintActive(false);
         setSelectedOption(null);
         setLastRoundResult(null);
         setStatus('betting');
@@ -114,7 +142,65 @@ const Play = ({ questions, loading, error, playerName }) => {
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [status, score, currentIndex, questions.length, rounds, playerName, navigate]);
+  }, [
+    status,
+    score,
+    currentIndex,
+    questions.length,
+    rounds,
+    playerName,
+    addHistoryRecord,
+    navigate,
+  ]);
+
+  // Phím tắt ở bước đặt cược
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (status !== 'betting') return;
+
+      const maxAllowed = Math.floor(Math.min(MAX_BET, score) / BET_STEP) * BET_STEP;
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setBet((prev) => {
+          const current = Number(prev) || MIN_BET;
+          const next = Math.min(maxAllowed, current + BET_STEP);
+          return Math.max(MIN_BET, next);
+        });
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setBet((prev) => {
+          const current = Number(prev) || MIN_BET;
+          const next = Math.max(MIN_BET, current - BET_STEP);
+          return Math.min(maxAllowed, next);
+        });
+      } else if (e.key === 'Enter') {
+        if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
+          return;
+        }
+        e.preventDefault();
+        handleConfirmBet();
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [status, score, handleConfirmBet]);
+
+  // Tiêu đề tab
+  useEffect(() => {
+    if (!questions.length || isBlankName) return undefined;
+    const total = questions.length;
+    if (status === 'betting') {
+      document.title = `Câu ${currentIndex + 1}/${total} – đặt cược`;
+    } else {
+      document.title = `Câu ${currentIndex + 1}/${total} – cược ${bet}`;
+    }
+
+    return () => {
+      document.title = 'Đặt cược kiến thức';
+    };
+  }, [status, currentIndex, bet, questions.length, isBlankName]);
 
   if (isBlankName) {
     return <Navigate to="/" replace />;
@@ -132,12 +218,40 @@ const Play = ({ questions, loading, error, playerName }) => {
     return null;
   }
 
+  const handleUsePreview = () => {
+    if (status === 'betting' && !usedSupports.preview) {
+      setUsedSupports((prev) => ({ ...prev, preview: true }));
+      setPreviewActive(true);
+    }
+  };
+
+  const handleUseInsurance = () => {
+    if ((status === 'betting' || status === 'answering') && !usedSupports.insurance) {
+      setUsedSupports((prev) => ({ ...prev, insurance: true }));
+      setInsuredCurrent(true);
+    }
+  };
+
+  const handleUseHint = () => {
+    if (status === 'answering' && !usedSupports.hint) {
+      setUsedSupports((prev) => ({ ...prev, hint: true }));
+      setHintActive(true);
+    }
+  };
+
   const renderFeedback = () => {
     if (status !== 'revealed' || !lastRoundResult) return null;
     if (lastRoundResult.correct) {
       return (
         <p className="feedback-text feedback-correct">
           {`+${formatScore(lastRoundResult.change)}`}
+        </p>
+      );
+    }
+    if (lastRoundResult.insuredSaved) {
+      return (
+        <p className="feedback-text feedback-insured">
+          Bảo hiểm: không bị trừ điểm
         </p>
       );
     }
@@ -151,6 +265,15 @@ const Play = ({ questions, loading, error, playerName }) => {
 
   return (
     <div className="page-container">
+      <Supports
+        status={status}
+        usedSupports={usedSupports}
+        insuredCurrent={insuredCurrent}
+        onUsePreview={handleUsePreview}
+        onUseInsurance={handleUseInsurance}
+        onUseHint={handleUseHint}
+      />
+
       {status === 'betting' ? (
         <BetPanel
           questionIndex={currentIndex}
@@ -160,6 +283,7 @@ const Play = ({ questions, loading, error, playerName }) => {
           bet={bet}
           setBet={setBet}
           onConfirmBet={handleConfirmBet}
+          previewActive={previewActive}
         />
       ) : (
         <div className="answering-section">
@@ -175,6 +299,7 @@ const Play = ({ questions, loading, error, playerName }) => {
             status={status}
             selectedOption={selectedOption}
             onSelectAnswer={(idx) => finishQuestion(idx)}
+            hintActive={hintActive}
           />
 
           {renderFeedback()}
