@@ -12,12 +12,25 @@ import QuestionDetail from './pages/QuestionDetail';
 import NotFound from './pages/NotFound';
 import './App.css';
 
+const BOOKMARKS_KEY = 'ltw_cuoc_bookmarks';
+const HISTORY_KEY = 'ltw_cuoc_history';
+
+const loadFromStorage = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const App = () => {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const [bookmarks, setBookmarks] = useState([]);
+  const [bookmarks, setBookmarks] = useState(() => loadFromStorage(BOOKMARKS_KEY, []));
+  const [history, setHistory] = useState(() => loadFromStorage(HISTORY_KEY, []));
   const [playerName, setPlayerName] = useState('');
 
   useEffect(() => {
@@ -42,10 +55,34 @@ const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
+    } catch {
+      // ignore storage errors
+    }
+  }, [bookmarks]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+      // ignore storage errors
+    }
+  }, [history]);
+
   const toggleBookmark = useCallback((id) => {
     setBookmarks((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  }, []);
+
+  const addHistoryRecord = useCallback((record) => {
+    setHistory((prev) => [...prev, record]);
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setHistory([]);
   }, []);
 
   return (
@@ -54,7 +91,13 @@ const App = () => {
         <Route path="/" element={<Layout />}>
           <Route
             index
-            element={<Home playerName={playerName} setPlayerName={setPlayerName} />}
+            element={
+              <Home
+                playerName={playerName}
+                setPlayerName={setPlayerName}
+                history={history}
+              />
+            }
           />
           <Route
             path="play"
@@ -64,11 +107,15 @@ const App = () => {
                 loading={loading}
                 error={error}
                 playerName={playerName}
+                addHistoryRecord={addHistoryRecord}
               />
             }
           />
           <Route path="result" element={<Result />} />
-          <Route path="history" element={<History />} />
+          <Route
+            path="history"
+            element={<History history={history} clearHistory={clearHistory} />}
+          />
           <Route
             path="questions"
             element={
