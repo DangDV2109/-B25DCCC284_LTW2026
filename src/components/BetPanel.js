@@ -9,6 +9,7 @@ const BetPanel = ({
   bet,
   setBet,
   onConfirmBet,
+  previewActive,
 }) => {
   const levelName = LEVELS[question.level];
   const multiplierText = formatMultiplier(MULTIPLIERS[question.level]);
@@ -28,6 +29,12 @@ const BetPanel = ({
       </h3>
 
       <p>{`Điểm hiện có: ${formatScore(score)}`}</p>
+
+      {previewActive && (
+        <div className="preview-box">
+          <p className="question-text">{question.question}</p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="bet-form">
         <label htmlFor="bet-input">Mức cược: </label>
